@@ -190,7 +190,6 @@ PigPile$NearestSpeakerStatusMax[PigPile$DatetimeUTC > PigPile$SpeakerOffMax] <- 
 ```
 
 
-
 ## Analysis and Plots
 
 Plotting each pig's distance from speakers in a single plot. 
@@ -200,6 +199,17 @@ ggplot(PigPile, mapping = aes(x = 'DatetimeUTC', group = 'TierName')) +
   xlim(min(x$DatetimeUTC), max(x$DatetimeUTC))
 
 ```
+
+However, after having recent difficulties with that plot, a second method was used to get an overview of pigs' distances from their closest speaker over time
+
+```{r}
+
+PigPile %>% 
+  ggplot(mapping = aes(x = DatetimeUTC, y = SpeakerDistance, color = TierName, na.rm = TRUE)) +
+  geom_smooth(method = "lm")
+
+```
+
 
 Plotting Each individual Pig to get a better look at their individual distances from their closest speaker
 Black bars indicate the pigs distance from their closest speaker, with the purple backdrop indicating when the speaker was turned ON. The blue line is a line of best fit. While derivative it helped me further visualize
