@@ -1,0 +1,504 @@
+# Proposal for Semester Project
+
+**Patterns & Trends in Environmental Data / Computational Movement
+Analysis Geo 880**
+
+| Semester:      | FS22                              |
+|----------------|---------------------------------- |
+| **Data:**      | Wild Boar Movement Data           |
+| **Title:**     | Determining the Effectiveness of “Wildschwein-Schreck”|
+| **Student 1:** | Steele Postlewaite                |
+
+
+## Abstract and Background 
+An over abundance of wild boar presents an incredible ecological problem for managers and a great threat for agriculture. A consistent and growing issue around the globe, wild boar populations have been growing steadily in Europe since the 1980s (Massei, Giovanna, et al.) and result in huge monetary costs from crop loss and damage to wilderness areas.There are numerous methods for controlling wild boars with the objective of reducing the damage they cause to a landscape. From using foul odors ( Schlageter 2012), using visual deterrents (Schlageter, 2011), or simply fencing off areas (Geisser, 2004). One study even attempted to use pellets intending to upset the boar's stomachs and have a foul taste (Schlageter, 2012). One commonality with all of these methods is that they don’t seem to successfully deter wild boar. In this report we will attempt to analyze another method for deterring wild boar. This particular “Wildschwein-Schreck” or "scare-off" method is done not with sight, taste, or smell, but acts on sound. By installing speakers to play loud noises in an effort to drive away, and keep away, any wild boars. This study hopes to determine if this method is really effective in keeping boars away by analyzing movement patterns in relation to these speakers. After a literature review, I hypothesize that, much like the numerous other methods to deter wild boars, the speakers will not be successful in keeping away boars.
+
+## Research Questions
+Our research question is can we determine if the boars’ average distance from a speaker increases while the speaker is turned on. If the boar’s distance from the speaker increases while it’s turned on we can interrupt this as the speaker may be successful in driving away the boars. While this alone would not be sufficient in determining if these speakers are truly effective, it would be the first step in evaluating this “Wildschwein-Shreck” method.
+
+
+## Data
+Data will be provided by ZHAW's Geoinformatics Research Group, through the course Patterns and trends in environmental data. The data has already been provided through coursework. The data files used were; wildschwein_BE, which are the positional data of collared wild boars, schreck_locations, which were the locations of the speakers, and schreck_agenda, which denotes the schedule for when the speakers were on or off
+
+## Packages, data manipulation and exploration.
+
+```{r}
+library(ComputationalMovementAnalysisData) #Data
+library(dplyr) #Data Manipulation
+library(sf) #simple functions
+library(ggplot2) #plotting
+library(RColorBrewer) #colors for plotting
+library(zoo) #3 day rolling averages
+library(tidyverse)
+
+
+```
+
+
+base mode function tells storage value, this custom function grabs statistical mode
+```{r}
+#base mode function tells storage value, this custom function grabs statistical mode
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+
+
+```
+
+Renaming for simplicity
+```{r}
+
+SA <- schreck_agenda
+
+#'   \item{id}{See \code{\link{schreck_locations}}}
+#'   \item{datum_on, datum_off}{Date on which the WSS was turned on / off}
+#'   \item{modus}{character, mode in which the WSS ran}
+#'   \item{lautstaerke}{sound intensity, as a percentage of the max value (120dB in 1 m distance)}
+#'   \item{intervall}{integer, the mean interval value between sound emisssion}
+#'   \item{ausrichtung_min, ausrichtung_max}{The min and max values (azimut) of the WSS orientation}
+#'   \item{phase}{...?}
+
+SL <- schreck_locations
+
+#'   \item{ID}{ID of the WSS}
+#'   \item{region, flurname}{a description of the place WSS was installed}
+#'   \item{kultur}{What crop culture is the WSS "protecting"?}
+#'   \item{installationshoehe}{Height of the installation}
+#'   \item{zaun}{...?}
+#'   \item{jadgdruck}{Intensity of hunging preassure}
+#'   \item{sch?den vorher}{...?}
+#'   \item{lat, lon}{Location Coordinates in WGS84}
+
+WBE <- wildschwein_BE
+
+```
+
+
+
+Creating a single speaker dataset based on the speaker ID then Converting the speaker locations to the coordinate system used in class
+```{r}
+
+Speakers <- left_join(SA, SL, by = "id")
+
+
+x <- st_as_sf(Speakers, coords = c('lon','lat'), crs = 4326, remove = FALSE)
+y <- st_transform(x, 2056)
+z <- st_coordinates(y,geometry)
+
+Speakers <- y %>% cbind(z)
+
+```
+
+Renaming the dataset to something fun to give me a little joy and then setting the location values to X and Y 
+```{r}
+
+Piggies <- WBE
+names(Piggies)[names(Piggies) == 'E'] <- "X"
+names(Piggies)[names(Piggies) == 'N'] <- "Y"
+
+```
+
+Converting the pig location data to the same coordinate system as above so they're directly comparable
+```{r}
+Piggies <- st_as_sf(Piggies,coords = c('X','Y') ,crs=2056)
+```
+
+
+Grabbing the index (the location in the list of all speakers) of the speaker that's nearest to the pig location in each row of the pig data
+```{r}
+Piggies$NearestSpeakerIndex <- st_nearest_feature(Piggies, Speakers)
+```
+
+Column initializing (Mutate was giving me trouble)
+Any of the columns that are 'Max' are just the same values but for the speaker that each pig is closest to for the greatest amount of time.
+```{r}
+Piggies$NearestSpeakerIndexMax <- 0
+Piggies$NearestSpeakerMax <- 0
+Piggies$NearestSpeaker <- 0
+Piggies$SpeakerGeom <- 0
+Piggies$SpeakerGeomMax <- 0
+```
+
+
+Looping through each set of pig data (pig by pig basis) and setting the column values for speaker index, speaker location, and the ID of the speaker both on a row by row basis and setting the whole column equal to the speaker that comes up the most often. 
+```{r}
+for(i in 1:length(Pig_List)){
+  Pig_List[[i]]$NearestSpeakerIndexMax <- Mode(Pig_List[[i]]$NearestSpeakerIndex)
+  Pig_List[[i]]$NearestSpeaker <- Speakers$id[Pig_List[[i]]$NearestSpeakerIndex]
+  Pig_List[[i]]$NearestSpeakerMax <- Speakers$id[Pig_List[[i]]$NearestSpeakerIndexMax]
+  Pig_List[[i]]$SpeakerGeom <- Speakers$geometry[Pig_List[[i]]$NearestSpeakerIndex]
+  Pig_List[[i]]$SpeakerGeomMax <- Speakers$geometry[Pig_List[[i]]$NearestSpeakerIndexMax]
+}
+```
+
+
+
+PigPile is the set of all data again, combined into a single dataframe for certain of functions
+```{r}
+PigPile <- bind_rows(Pig_List, .id = "column_label")
+```
+
+
+Calculating the distance between the pig and the speaker that's nearest to them and the distance between the pig and the speaker that they're nearest to for most of their recorded data
+```{r}
+PigPile$SpeakerDistance <- 0
+PigPile$SpeakerDistanceMax <- 0
+for(i in 1:nrow(PigPile)){
+  PigPile$SpeakerDistance[i] <- dist(c(PigPile$geometry[[i]],PigPile$SpeakerGeom[[i]]))
+  PigPile$SpeakerDistanceMax[i] <- dist(c(PigPile$geometry[[i]],PigPile$SpeakerGeomMax[[i]]))
+}
+```
+
+Copying the speaker scheduling data over to the pig data for direct comparison
+```{r}
+PigPile$SpeakerOn <- Speakers$datum_on[PigPile$NearestSpeakerIndex]
+PigPile$SpeakerOff <- Speakers$datum_off[PigPile$NearestSpeakerIndex]
+
+PigPile$SpeakerOnMax <- Speakers$datum_on[PigPile$NearestSpeakerIndexMax]
+PigPile$SpeakerOffMax <- Speakers$datum_off[PigPile$NearestSpeakerIndexMax]
+
+```
+
+Setting the speaker status for each row. 0 = hasn't been turned on, 1 = is currently on, 2 = has been on and is now off
+```{r}
+PigPile$NearestSpeakerStatus <- 0
+
+PigPile$NearestSpeakerStatus[PigPile$DatetimeUTC >= PigPile$SpeakerOn & PigPile$DatetimeUTC <= PigPile$SpeakerOff] <- 1
+PigPile$NearestSpeakerStatus[PigPile$DatetimeUTC > PigPile$SpeakerOff] <- 2
+
+```
+
+
+Running the same calculation as above but strictly for the speaker that the pig is nearest for the greatest amount of time
+```{r}
+
+PigPile$NearestSpeakerStatusMax <- 0
+
+PigPile$NearestSpeakerStatusMax[PigPile$DatetimeUTC >= PigPile$SpeakerOnMax & PigPile$DatetimeUTC <= PigPile$SpeakerOffMax] <- 1
+PigPile$NearestSpeakerStatusMax[PigPile$DatetimeUTC > PigPile$SpeakerOffMax] <- 2
+
+
+```
+
+
+
+## Analysis and Plots
+
+Plotting each pig's distance from speakers in a single plot. 
+```{r}
+ggplot(PigPile, mapping = aes(x = 'DatetimeUTC', group = 'TierName')) + 
+  geom_smooth(mapping = aes(y = 'SpeakerDistance', colour = 'TierName'), se = FALSE) + 
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC))
+
+```
+
+Plotting Each individual Pig to get a better look at their individual distances from their closest speaker
+Black bars indicate the pigs distance from their closest speaker, with the purple backdrop indicating when the speaker was turned ON. The blue line is a line of best fit. While derivative it helped me further visualize
+```{r}
+#Grabbing the first member of the pig_list dataset
+x <- Pig_List[[1]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  #Calling the distance data, just the black line
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  #Drawing the best fit line across the data
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  #setting the x limits based on the times the pig had recorded data
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  #Drawing the blue rectangle over the time that the speaker is on
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") +
+  #adding the pig name as a title
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[2]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[3]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_point(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[4]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[5]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[6]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[7]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[8]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistance)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistance), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[9]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[10]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistance),
+           ymax = max(x$SpeakerDistance),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[11]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[12]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[13]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[14]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[15]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[16]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[17]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[18]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+x <- Pig_List[[19]]
+
+ggplot(x, mapping = aes(x = x$DatetimeUTC)) + 
+  geom_line(mapping = aes(y = x$SpeakerDistanceMax)) +
+  geom_smooth(mapping = aes(y = x$SpeakerDistanceMax), se = FALSE)+
+  xlim(min(x$DatetimeUTC), max(x$DatetimeUTC)) +
+  annotate("rect",
+           xmin = max(x$DatetimeUTC[x$NearestSpeakerStatus==0]),
+           xmax = max(x$DatetimeUTC[x$NearestSpeakerStatus==1]),
+           ymin = min(x$SpeakerDistanceMax),
+           ymax = max(x$SpeakerDistanceMax),
+           alpha = .1, fill = "blue") + 
+  ggtitle(x$TierName[1])
+
+
+
+
+
+
+```
+
+
+
+
+## Interpretation and results
+
+After reviewing my plots, we see a high degree of variability regarding the pigs distance changes while the speakers were on. Some individuals showed an increase in distance, indicating that they were indeed moving overall further away from the speakers while they were active, such as Amos. However there were also instances of pigs moving overall closer to the speakers while active, like with Ueli.There was also an issue where the speaker was active the entire time a pig was monitored, which makes determining the speakers effect difficult, as with Venus.
+
+Overall however, it appears that the speakers status (on/off) did have some affect on the pigs distance from said speaker. It seems that the effect was not particularly profound, or long lasting. Further analysis is needed, but from this initial data it seems that this may not be a particularlly effective method of deterring wild pigs.
+
+## References
+
+Campbell, T. A., & Long, D. B. (2009). Feral swine damage and damage management in forested ecosystems. Forest Ecology and management, 257(12), 2319-2326.
+
+Geisser, H., & REYER, H. U. (2004). Efficacy of hunting, feeding, and fencing to reduce crop damage by wild boars. The Journal of Wildlife Management, 68(4), 939-946.
+
+Massei, G., Kindberg, J., Licoppe, A., Gačić, D., Šprem, N., Kamler, J., ... & Náhlik, A. (2015). Wild boar populations up, numbers of hunters down? A review of trends and implications for Europe. Pest management science, 71(4), 492-500.
+
+Schlageter, A., & Haag-Wackernagel, D. (2011). Effectiveness of solar blinkers as a means of crop protection from wild boar damage. Crop Protection, 30(9), 1216-1222.
+
+Schlageter, A., & Haag-Wackernagel, D. (2012). A gustatory repellent for protection of agricultural land from wild boar damage: an investigation on effectiveness. Journal of Agricultural Science, 4(5), 61.
+
+Schlageter, A., & Haag-Wackernagel, D. (2012). Evaluation of an odor repellent for protecting crops from wild boar damage. Journal of pest science, 85(2), 209-215.
+
+
+
+
