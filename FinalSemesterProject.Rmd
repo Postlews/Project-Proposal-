@@ -122,7 +122,14 @@ Piggies$SpeakerGeomMax <- 0
 ```
 
 
+Breaking the dataset up based on the pig names
+```{r}
+Pig_List <- split(Piggies, f = Piggies$TierName)
+
+```
+
 Looping through each set of pig data (pig by pig basis) and setting the column values for speaker index, speaker location, and the ID of the speaker both on a row by row basis and setting the whole column equal to the speaker that comes up the most often. 
+
 ```{r}
 for(i in 1:length(Pig_List)){
   Pig_List[[i]]$NearestSpeakerIndexMax <- Mode(Pig_List[[i]]$NearestSpeakerIndex)
