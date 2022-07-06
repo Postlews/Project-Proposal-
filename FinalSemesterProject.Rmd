@@ -18,7 +18,7 @@ Our research question is can we determine if the boars’ average distance from 
 
 
 ## Data
-Data will be provided by ZHAW's Geoinformatics Research Group, through the course Patterns and trends in environmental data. The data has already been provided through coursework. The data files used were; wildschwein_BE, which are the positional data of collared wild boars, schreck_locations, which were the locations of the speakers, and schreck_agenda, which denotes the schedule for when the speakers were on or off
+Data will be provided by ZHAW's Geoinformatics Research Group, through the course Patterns and trends in environmental data. The data has already been provided through coursework. The data files used were; wildschwein_BE, which are the positional data of collared wild boars, schreck_locations, which were the locations of the speakers, and schreck_agenda, which denotes the schedule for when the speakers were on or off.
 
 ## Packages, data manipulation and exploration.
 
